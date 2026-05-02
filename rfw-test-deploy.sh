@@ -942,14 +942,10 @@ install_or_update_rfw() {
 
     stop_existing_service
 
-    if [[ ! -x "$RFW_BIN_PATH" || -n "$BINARY_URL" || "$RELEASE_URL" != "$DEFAULT_RELEASE_URL" ]]; then
-        local url=""
-        url=$(resolve_binary_url)
-        step "下载二进制文件"
-        download_binary "$url"
-    else
-        info "检测到已安装二进制，继续复用：${RFW_BIN_PATH}"
-    fi
+    local url=""
+    url=$(resolve_binary_url)
+    step "下载二进制文件"
+    download_binary "$url"
 
     step "写入 systemd 服务"
     write_service
