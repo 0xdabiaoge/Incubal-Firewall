@@ -7,7 +7,10 @@ use log::{debug, info, warn};
 use rfw_common::{PortAccessKey, PortAccessStats};
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
+use std::path::Path;
 use tokio::signal;
+
+const PORT_ACCESS_LOG_PIN: &str = "/sys/fs/bpf/rfw_port_access_log";
 
 // 从 URL 下载并解析指定国家的 GeoIP 数据
 async fn fetch_geoip_data(country_code: &str) -> anyhow::Result<Vec<String>> {
@@ -715,14 +718,21 @@ async fn run_firewall(opt: RunOpt) -> anyhow::Result<()> {
         config_flags |= rfw_common::RULE_LOG_PORT_ACCESS;
         info!("启用规则: 记录端口访问日志");
 
+        // systemd restart 通常发送 SIGTERM，旧进程可能来不及清理 pinned map。
+        // 启动时先删除旧 pin，避免 BPF_OBJ_PIN 因 File exists 失败。
+        if Path::new(PORT_ACCESS_LOG_PIN).exists() {
+            std::fs::remove_file(PORT_ACCESS_LOG_PIN)
+                .context("清理旧的 PORT_ACCESS_LOG pin 失败，请检查 /sys/fs/bpf 权限")?;
+        }
+
         // Pin PORT_ACCESS_LOG map 到 bpffs 以便其他进程访问
         let port_access_map = ebpf
             .map("PORT_ACCESS_LOG")
             .context("无法找到 PORT_ACCESS_LOG map")?;
         port_access_map
-            .pin("/sys/fs/bpf/rfw_port_access_log")
+            .pin(PORT_ACCESS_LOG_PIN)
             .context("无法 pin PORT_ACCESS_LOG map，请确保 /sys/fs/bpf 已挂载且有写权限")?;
-        info!("已将端口访问日志 map pin 到 /sys/fs/bpf/rfw_port_access_log");
+        info!("已将端口访问日志 map pin 到 {}", PORT_ACCESS_LOG_PIN);
     }
 
     // 将配置写入 eBPF map
@@ -856,7 +866,7 @@ async fn run_firewall(opt: RunOpt) -> anyhow::Result<()> {
 
     // 清理 pinned map
     if opt.log_port_access {
-        if let Err(e) = std::fs::remove_file("/sys/fs/bpf/rfw_port_access_log") {
+        if let Err(e) = std::fs::remove_file(PORT_ACCESS_LOG_PIN) {
             warn!("清理 pinned map 失败: {}", e);
         } else {
             info!("已清理端口访问日志 map");

@@ -842,6 +842,14 @@ stop_existing_service() {
         systemctl stop "$RFW_SERVICE_NAME" 2>/dev/null || true
         systemctl disable "$RFW_SERVICE_NAME" 2>/dev/null || true
     fi
+    cleanup_bpf_pin
+}
+
+cleanup_bpf_pin() {
+    if [[ -e /sys/fs/bpf/rfw_port_access_log ]]; then
+        rm -f /sys/fs/bpf/rfw_port_access_log 2>/dev/null || true
+        info "已清理旧的端口统计 BPF pin。"
+    fi
 }
 
 download_binary() {
@@ -1007,8 +1015,10 @@ apply_rules_flow() {
     fi
 
     step "应用规则并重启服务"
+    systemctl stop "$RFW_SERVICE_NAME" 2>/dev/null || true
+    cleanup_bpf_pin
     write_service
-    systemctl restart "$RFW_SERVICE_NAME"
+    systemctl start "$RFW_SERVICE_NAME"
     sleep 1
     if systemctl is-active --quiet "$RFW_SERVICE_NAME"; then
         log "规则已生效。"
@@ -1223,7 +1233,9 @@ restart_rfw() {
     require_root
     require_command systemctl
     step "重启 RFW 服务"
-    systemctl restart "$RFW_SERVICE_NAME"
+    systemctl stop "$RFW_SERVICE_NAME" 2>/dev/null || true
+    cleanup_bpf_pin
+    systemctl start "$RFW_SERVICE_NAME"
     sleep 1
     show_status
 }
