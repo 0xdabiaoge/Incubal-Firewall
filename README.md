@@ -181,6 +181,15 @@ sudo bash rfw-test-deploy.sh --iface eth0 --profile tuic
 sudo bash rfw-test-deploy.sh --iface eth0 --profile tcp-node
 ```
 
+模板支持批量组合，脚本会自动合并并去重：
+
+```bash
+sudo bash rfw-test-deploy.sh --iface eth0 --profile hy2,tuic,tcp-node
+```
+
+在交互菜单中也可以输入 `2 3 4`、`2-3-4`、`2-4` 或 `hy2,tuic,tcp-node`。
+自定义阻断规则同样支持批量输入，例如 `1 3 6-11` 或 `all`。
+
 可选 profile：
 
 ```text
@@ -189,7 +198,7 @@ hy2       重点测试 HY2 / 混淆 HY2 / UDP 滥用
 tuic      重点测试 TUIC / 非 Web 端口 QUIC 代理
 tcp-node  重点测试 VLESS / VMess / SOCKS / FET 这类 TCP 弱协议
 baseline  基础节点阻断组合
-manual    逐条规则交互选择
+manual    批量自定义规则选择
 ```
 
 常用操作：

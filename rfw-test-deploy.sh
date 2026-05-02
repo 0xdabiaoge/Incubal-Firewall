@@ -8,7 +8,7 @@
 # ============================================================================
 set -euo pipefail
 
-readonly SCRIPT_VERSION="0.2.1"
+readonly SCRIPT_VERSION="0.2.2"
 readonly DEFAULT_RELEASE_URL="https://github.com/0xdabiaoge/incudal-rfw/releases/latest/download"
 readonly RFW_INSTALL_DIR="/root/rfw"
 readonly RFW_BIN_PATH="${RFW_INSTALL_DIR}/rfw"
@@ -50,6 +50,35 @@ divider() {
     echo -e "${DIM}------------------------------------------------------------${NC}"
 }
 
+wide_divider() {
+    echo -e "${DIM}============================================================${NC}"
+}
+
+section_title() {
+    echo ""
+    echo -e "${BOLD}${CYAN}$1${NC}"
+    divider
+}
+
+menu_line() {
+    local key="$1"
+    local title="$2"
+    local desc="${3:-}"
+    if [[ -n "$desc" ]]; then
+        echo -e "  ${CYAN}${key})${NC} ${BOLD}${title}${NC} ${DIM}${desc}${NC}"
+    else
+        echo -e "  ${CYAN}${key})${NC} ${BOLD}${title}${NC}"
+    fi
+}
+
+append_rule() {
+    local rule="$1"
+    case " ${RFW_ARGS} " in
+        *" ${rule} "*) ;;
+        *) RFW_ARGS="${RFW_ARGS} ${rule}" ;;
+    esac
+}
+
 usage() {
     cat <<EOF
 RFW 测试部署脚本 v${SCRIPT_VERSION}
@@ -73,6 +102,7 @@ RFW 测试部署脚本 v${SCRIPT_VERSION}
                               示例：--rules "--countries CN --block-http"
   --no-default-rules          不生成默认规则；除非同时指定 --rules。
   --profile <配置>            规则配置：strong、hy2、tuic、tcp-node、baseline、manual。
+                              支持组合：--profile hy2,tuic,tcp-node
   --countries <列表>          默认规则使用的国家代码列表，默认：CN。
   --geo-mode <blacklist|whitelist|none>
                               默认规则的 GeoIP 模式，默认：blacklist。
@@ -89,11 +119,11 @@ RFW 测试部署脚本 v${SCRIPT_VERSION}
   tuic        重点测试 TUIC / 非 Web 端口 QUIC 代理
   tcp-node    重点测试 VLESS、VMess、SOCKS、FET 这类 TCP 弱节点协议
   baseline    基础节点阻断组合
-  manual      逐条规则手动选择
+  manual      批量自定义规则选择
 
 示例：
   sudo bash rfw-test-deploy.sh --iface eth0 --profile strong --yes
-  sudo bash rfw-test-deploy.sh --iface eth0 --profile hy2
+  sudo bash rfw-test-deploy.sh --iface eth0 --profile hy2,tuic,tcp-node
   sudo bash rfw-test-deploy.sh --iface eth0 --xdp-mode skb --log-port-access
   sudo bash rfw-test-deploy.sh --iface eth0 --rules "--block-all-from CN --log-port-access"
 EOF
@@ -271,53 +301,256 @@ choose_iface() {
     done
 }
 
+profile_name_from_token() {
+    case "$1" in
+        1|strong) echo "strong" ;;
+        2|hy2) echo "hy2" ;;
+        3|tuic) echo "tuic" ;;
+        4|tcp-node|tcp|tcpnode) echo "tcp-node" ;;
+        5|baseline|base) echo "baseline" ;;
+        6|manual|custom) echo "manual" ;;
+        *) return 1 ;;
+    esac
+}
+
+expand_selection_tokens() {
+    local input="$1"
+    local token=""
+    local start=""
+    local end=""
+    local i=""
+
+    input=${input//,/ }
+    input=${input//，/ }
+    input=${input//、/ }
+
+    for token in $input; do
+        if [[ "$token" =~ ^[0-9]+(-[0-9]+){2,}$ ]]; then
+            printf '%s\n' "$token" | tr '-' '\n'
+        elif [[ "$token" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+            start="${BASH_REMATCH[1]}"
+            end="${BASH_REMATCH[2]}"
+            if (( start <= end )); then
+                for ((i = start; i <= end; i++)); do
+                    echo "$i"
+                done
+            else
+                for ((i = start; i >= end; i--)); do
+                    echo "$i"
+                done
+            fi
+        else
+            echo "$token"
+        fi
+    done
+}
+
+profile_desc() {
+    case "$1" in
+        strong) echo "强力阻断：QUIC、HY2、TUIC、VLESS、VMess、UDP-FET、SOCKS、WG、HTTP、Email 全开" ;;
+        hy2) echo "重点测试 HY2 / 混淆 HY2 / UDP 滥用，比 --block-quic 更克制" ;;
+        tuic) echo "重点测试 TUIC / 非 Web 端口 QUIC 代理" ;;
+        tcp-node) echo "重点测试 VLESS、VMess、SOCKS、FET 这类 TCP 弱节点协议" ;;
+        baseline) echo "基础节点阻断组合，不启用 HY2/TUIC 拆分规则" ;;
+        manual) echo "进入自定义规则批量选择" ;;
+    esac
+}
+
+normalize_profile_selection() {
+    local input="${1:-strong}"
+    local token=""
+    local profile=""
+    local result=""
+
+    for token in $(expand_selection_tokens "$input"); do
+        if profile=$(profile_name_from_token "$token"); then
+            case " ${result} " in
+                *" ${profile} "*) ;;
+                *) result="${result} ${profile}" ;;
+            esac
+        else
+            return 1
+        fi
+    done
+
+    printf '%s\n' "${result# }"
+}
+
+show_profile_menu() {
+    section_title "规则模板"
+    menu_line "1" "strong" "强力阻断：QUIC、HY2、TUIC、VLESS、VMess、UDP-FET、SOCKS、WG、HTTP、Email 全开"
+    menu_line "2" "hy2" "重点测试 HY2 / 混淆 HY2 / UDP 滥用"
+    menu_line "3" "tuic" "重点测试 TUIC / 非 Web 端口 QUIC 代理"
+    menu_line "4" "tcp-node" "重点测试 VLESS、VMess、SOCKS、FET 这类 TCP 弱节点协议"
+    menu_line "5" "baseline" "基础节点阻断组合"
+    menu_line "6" "manual" "进入自定义规则批量选择"
+    echo -e "${DIM}支持批量输入：2 3 4、2-3-4、2-4、hy2,tuic,tcp-node。规则会自动合并去重。${NC}"
+    echo ""
+}
+
 select_rule_profile() {
     if [[ -n "$RULE_PROFILE" || "$NON_INTERACTIVE" == "true" ]]; then
         return 0
     fi
 
-    echo ""
-    echo -e "${BOLD}规则配置：${NC}"
-    echo -e "  ${CYAN}1)${NC} strong   ${DIM}强力阻断：QUIC、HY2、TUIC、VLESS、VMess、UDP-FET、SOCKS、WG、HTTP、Email 全开${NC}"
-    echo -e "  ${CYAN}2)${NC} hy2      ${DIM}重点测试 HY2 / 混淆 HY2 / UDP 滥用，比 --block-quic 更克制${NC}"
-    echo -e "  ${CYAN}3)${NC} tuic     ${DIM}重点测试 TUIC / 非 Web 端口 QUIC 代理${NC}"
-    echo -e "  ${CYAN}4)${NC} tcp-node ${DIM}重点测试 VLESS、VMess、SOCKS、FET 这类 TCP 弱节点协议${NC}"
-    echo -e "  ${CYAN}5)${NC} baseline ${DIM}基础节点阻断组合，不启用 HY2/TUIC 拆分规则${NC}"
-    echo -e "  ${CYAN}6)${NC} manual   ${DIM}逐条规则手动选择${NC}"
-    echo ""
+    show_profile_menu
 
     while true; do
-        echo -ne "${BOLD}请选择规则配置 [1-6，默认 1]：${NC}"
+        echo -ne "${BOLD}请选择规则模板 [可批量，默认 1]：${NC}"
         local choice=""
+        local normalized=""
         read -r choice || true
-        case "${choice:-1}" in
-            1) RULE_PROFILE="strong"; return 0 ;;
-            2) RULE_PROFILE="hy2"; return 0 ;;
-            3) RULE_PROFILE="tuic"; return 0 ;;
-            4) RULE_PROFILE="tcp-node"; return 0 ;;
-            5) RULE_PROFILE="baseline"; return 0 ;;
-            6) RULE_PROFILE="manual"; return 0 ;;
-            *) warn "选择无效，请重新输入。" ;;
-        esac
+        if normalized=$(normalize_profile_selection "${choice:-1}"); then
+            RULE_PROFILE="$normalized"
+            log "已选择模板：${RULE_PROFILE}"
+            return 0
+        fi
+        warn "选择无效，请重新输入。示例：2 3 4、2-3-4 或 2-4"
     done
 }
 
-build_manual_rules() {
-    RFW_ARGS=""
+manual_rule_name() {
+    case "$1" in
+        1) echo "--block-email" ;;
+        2) echo "--block-http" ;;
+        3) echo "--block-socks5" ;;
+        4) echo "--block-fet-strict" ;;
+        5) echo "--block-wireguard" ;;
+        6) echo "--block-quic" ;;
+        7) echo "--block-hysteria2" ;;
+        8) echo "--block-tuic" ;;
+        9) echo "--block-udp-fet" ;;
+        10) echo "--block-vless-tcp" ;;
+        11) echo "--block-vmess-tcp" ;;
+        *) return 1 ;;
+    esac
+}
 
-    prompt_yes_no "是否阻断 Email/SMTP 发信滥用？" "yes" && RFW_ARGS="${RFW_ARGS} --block-email"
-    prompt_yes_no "是否阻断明文 HTTP 入站？" "yes" && RFW_ARGS="${RFW_ARGS} --block-http"
-    prompt_yes_no "是否阻断 SOCKS4/SOCKS5 入站？" "yes" && RFW_ARGS="${RFW_ARGS} --block-socks5"
-    prompt_yes_no "是否阻断 TCP 全加密高熵流量（严格 FET）？" "yes" && RFW_ARGS="${RFW_ARGS} --block-fet-strict"
-    prompt_yes_no "是否阻断 WireGuard 入站？" "yes" && RFW_ARGS="${RFW_ARGS} --block-wireguard"
-    prompt_yes_no "是否阻断所有可识别 QUIC？" "yes" && RFW_ARGS="${RFW_ARGS} --block-quic"
-    prompt_yes_no "是否尽力阻断 Hysteria2/HY2？" "yes" && RFW_ARGS="${RFW_ARGS} --block-hysteria2"
-    prompt_yes_no "是否尽力阻断 TUIC？" "yes" && RFW_ARGS="${RFW_ARGS} --block-tuic"
-    prompt_yes_no "是否阻断 UDP 高熵加密流量？" "yes" && RFW_ARGS="${RFW_ARGS} --block-udp-fet"
-    prompt_yes_no "是否阻断裸 VLESS over TCP？" "yes" && RFW_ARGS="${RFW_ARGS} --block-vless-tcp"
-    prompt_yes_no "是否阻断裸 VMess over TCP？" "yes" && RFW_ARGS="${RFW_ARGS} --block-vmess-tcp"
+show_manual_rule_menu() {
+    section_title "自定义阻断规则"
+    menu_line "1" "Email/SMTP" "阻断发信滥用端口"
+    menu_line "2" "HTTP" "阻断明文 HTTP 入站"
+    menu_line "3" "SOCKS" "阻断 SOCKS4 / SOCKS4a / SOCKS5"
+    menu_line "4" "TCP-FET" "阻断 TCP 全加密高熵流量，覆盖大量弱节点协议"
+    menu_line "5" "WireGuard" "阻断 WireGuard UDP"
+    menu_line "6" "QUIC" "粗暴阻断可识别 QUIC，HY2/TUIC/HTTP3 会一起挡"
+    menu_line "7" "HY2" "尽力阻断 Hysteria2 / 混淆 HY2"
+    menu_line "8" "TUIC" "尽力阻断 TUIC / 非 Web 端口 QUIC 代理"
+    menu_line "9" "UDP-FET" "阻断 UDP 高熵加密流量"
+    menu_line "10" "VLESS TCP" "阻断裸 VLESS over TCP"
+    menu_line "11" "VMess TCP" "阻断裸 VMess over TCP"
+    echo -e "${DIM}支持批量输入：1 3 6-11、1-3-6；输入 all 全选；输入 none 不启用规则。${NC}"
+    echo ""
+}
+
+build_manual_rules() {
+    local base_args="$RFW_ARGS"
+
+    if [[ "$NON_INTERACTIVE" == "true" ]]; then
+        append_rule "--block-email"
+        append_rule "--block-http"
+        append_rule "--block-socks5"
+        append_rule "--block-fet-strict"
+        append_rule "--block-wireguard"
+        append_rule "--block-quic"
+        append_rule "--block-hysteria2"
+        append_rule "--block-tuic"
+        append_rule "--block-udp-fet"
+        append_rule "--block-vless-tcp"
+        append_rule "--block-vmess-tcp"
+        return 0
+    fi
+
+    show_manual_rule_menu
+
+    while true; do
+        echo -ne "${BOLD}请选择阻断规则 [默认 all]：${NC}"
+        local choice=""
+        local token=""
+        local rule=""
+        local invalid="false"
+        read -r choice || true
+        choice="${choice:-all}"
+
+        if [[ "$choice" == "none" || "$choice" == "0" ]]; then
+            RFW_ARGS=""
+            warn "你选择了不启用任何阻断规则。"
+            return 0
+        fi
+
+        if [[ "$choice" == "all" || "$choice" == "全部" ]]; then
+            choice="1-11"
+        fi
+
+        RFW_ARGS="$base_args"
+        for token in $(expand_selection_tokens "$choice"); do
+            if rule=$(manual_rule_name "$token"); then
+                append_rule "$rule"
+            else
+                invalid="true"
+            fi
+        done
+
+        RFW_ARGS="${RFW_ARGS# }"
+        if [[ "$invalid" == "false" ]]; then
+            log "已选择规则：${RFW_ARGS:-<无>}"
+            return 0
+        fi
+        warn "选择无效，请重新输入。示例：1 3 6-11 或 all"
+    done
 
     RFW_ARGS="${RFW_ARGS# }"
+}
+
+apply_profile_rules() {
+    local profile="$1"
+    case "$profile" in
+        strong)
+            append_rule "--block-email"
+            append_rule "--block-http"
+            append_rule "--block-socks5"
+            append_rule "--block-fet-strict"
+            append_rule "--block-wireguard"
+            append_rule "--block-quic"
+            append_rule "--block-hysteria2"
+            append_rule "--block-tuic"
+            append_rule "--block-udp-fet"
+            append_rule "--block-vless-tcp"
+            append_rule "--block-vmess-tcp"
+            ;;
+        hy2)
+            append_rule "--block-email"
+            append_rule "--block-socks5"
+            append_rule "--block-fet-strict"
+            append_rule "--block-wireguard"
+            append_rule "--block-hysteria2"
+            append_rule "--block-udp-fet"
+            ;;
+        tuic)
+            append_rule "--block-email"
+            append_rule "--block-socks5"
+            append_rule "--block-wireguard"
+            append_rule "--block-tuic"
+            ;;
+        tcp-node)
+            append_rule "--block-email"
+            append_rule "--block-http"
+            append_rule "--block-socks5"
+            append_rule "--block-fet-strict"
+            append_rule "--block-vless-tcp"
+            append_rule "--block-vmess-tcp"
+            ;;
+        baseline)
+            append_rule "--block-email"
+            append_rule "--block-http"
+            append_rule "--block-socks5"
+            append_rule "--block-fet-strict"
+            append_rule "--block-wireguard"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 build_default_rules() {
@@ -334,32 +567,24 @@ build_default_rules() {
         RFW_ARGS=""
     else
         select_rule_profile
-        RULE_PROFILE="${RULE_PROFILE:-strong}"
+        RULE_PROFILE=$(normalize_profile_selection "${RULE_PROFILE:-strong}") || {
+            error "--profile 无效：${RULE_PROFILE}。可选值：strong、hy2、tuic、tcp-node、baseline、manual，也支持逗号分隔组合。"
+            exit 1
+        }
 
-        case "$RULE_PROFILE" in
-            strong)
-                RFW_ARGS="--block-email --block-http --block-socks5 --block-fet-strict --block-wireguard --block-quic --block-hysteria2 --block-tuic --block-udp-fet --block-vless-tcp --block-vmess-tcp"
-                ;;
-            hy2)
-                RFW_ARGS="--block-email --block-socks5 --block-fet-strict --block-wireguard --block-hysteria2 --block-udp-fet"
-                ;;
-            tuic)
-                RFW_ARGS="--block-email --block-socks5 --block-wireguard --block-tuic"
-                ;;
-            tcp-node)
-                RFW_ARGS="--block-email --block-http --block-socks5 --block-fet-strict --block-vless-tcp --block-vmess-tcp"
-                ;;
-            baseline)
-                RFW_ARGS="--block-email --block-http --block-socks5 --block-fet-strict --block-wireguard"
-                ;;
-            manual)
+        RFW_ARGS=""
+        local profile=""
+        for profile in $RULE_PROFILE; do
+            if [[ "$profile" == "manual" ]]; then
                 build_manual_rules
-                ;;
-            *)
-                error "--profile 无效：${RULE_PROFILE}。可选值：strong、hy2、tuic、tcp-node、baseline、manual。"
-                exit 1
-                ;;
-        esac
+            else
+                apply_profile_rules "$profile" || {
+                    error "--profile 无效：${profile}"
+                    exit 1
+                }
+            fi
+        done
+        RFW_ARGS="${RFW_ARGS# }"
 
         case "$GEO_MODE" in
             blacklist)
@@ -880,21 +1105,30 @@ main_menu() {
 
     while true; do
         clear 2>/dev/null || true
-        echo -e "${BOLD}Incudal RFW 测试部署菜单${NC} ${DIM}v${SCRIPT_VERSION}${NC}"
-        divider
-        echo -e "  ${CYAN}1)${NC} 快速强力部署 ${DIM}(所有节点阻断规则，默认只阻断中国来源 CN)${NC}"
-        echo -e "  ${CYAN}2)${NC} 选择规则模板部署"
-        echo -e "  ${CYAN}3)${NC} 自定义选择阻断规则部署"
-        echo -e "  ${CYAN}4)${NC} 手动输入完整 RFW 参数部署"
-        echo -e "  ${CYAN}5)${NC} 查看服务状态和启动命令"
-        echo -e "  ${CYAN}6)${NC} 查看最近运行日志"
-        echo -e "  ${CYAN}7)${NC} 查看最近拦截日志"
-        echo -e "  ${CYAN}8)${NC} 实时跟踪日志"
-        echo -e "  ${CYAN}9)${NC} 查看端口访问/拦截统计"
-        echo -e "  ${CYAN}10)${NC} 重启 RFW 服务"
-        echo -e "  ${CYAN}11)${NC} 完整卸载并删除脚本"
-        echo -e "  ${CYAN}0)${NC} 退出"
-        divider
+        local service_state="未知"
+        if command -v systemctl >/dev/null 2>&1; then
+            service_state=$(systemctl is-active "$RFW_SERVICE_NAME" 2>/dev/null || true)
+            [[ -z "$service_state" ]] && service_state="未知"
+        fi
+
+        wide_divider
+        echo -e "${BOLD}${CYAN} Incudal RFW 测试部署控制台${NC} ${DIM}v${SCRIPT_VERSION}${NC}"
+        echo -e " ${DIM}默认策略：只阻断中国来源 CN；如需全来源，请在 GeoIP 中显式选择“不区分国家”。${NC}"
+        echo -e " ${DIM}服务状态：${service_state}    安装目录：${RFW_INSTALL_DIR}${NC}"
+        wide_divider
+        menu_line "1" "快速强力部署" "(所有节点阻断规则，默认只阻断中国来源 CN)"
+        menu_line "2" "批量选择规则模板部署" "(支持 2 3 4 / 2-3-4 / 2-4 / hy2,tuic,tcp-node)"
+        menu_line "3" "批量自定义阻断规则部署" "(支持 1 3 6-11 / all)"
+        menu_line "4" "手动输入完整 RFW 参数部署"
+        menu_line "5" "查看服务状态和启动命令"
+        menu_line "6" "查看最近运行日志"
+        menu_line "7" "查看最近拦截日志"
+        menu_line "8" "实时跟踪日志"
+        menu_line "9" "查看端口访问/拦截统计"
+        menu_line "10" "重启 RFW 服务"
+        menu_line "11" "完整卸载并删除脚本"
+        menu_line "0" "退出"
+        wide_divider
         echo -ne "${BOLD}请选择操作：${NC}"
 
         local choice=""
