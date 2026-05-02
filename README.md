@@ -139,17 +139,19 @@ sudo ./rfw stats --group-by-port
 
 ## 测试部署脚本
 
-`rfw-test-deploy.sh` 用于在测试机器上快速部署 GitHub Release 产物。它会：
+`rfw-test-deploy.sh` 用于在测试机器上快速部署 GitHub Release 产物。直接运行
+脚本会进入中文交互菜单；带参数运行则保持命令行模式。它会：
 
 1. 根据架构下载 Release 二进制；
 2. 安装到 `/root/rfw/rfw`；
 3. 写入 `/etc/systemd/system/rfw.service`；
-4. 启动并设置开机自启。
+4. 启动并设置开机自启；
+5. 卸载时可一并清理脚本副本和当前脚本本身。
 
-交互式部署：
+交互式菜单：
 
 ```bash
-sudo bash rfw-test-deploy.sh --iface eth0
+sudo bash rfw-test-deploy.sh
 ```
 
 全局强力节点阻断：
@@ -192,6 +194,9 @@ manual    逐条规则交互选择
 ```bash
 sudo bash rfw-test-deploy.sh --status
 sudo bash rfw-test-deploy.sh --logs
+sudo bash rfw-test-deploy.sh --block-logs
+sudo bash rfw-test-deploy.sh --stats
+sudo bash rfw-test-deploy.sh --restart
 sudo bash rfw-test-deploy.sh --uninstall
 ```
 
