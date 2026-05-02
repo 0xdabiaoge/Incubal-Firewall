@@ -123,14 +123,14 @@ jobs:
           ## Usage
 
           ```bash
-          # Basic usage - block all China inbound traffic
-          sudo rfw --iface eth0 --block-cn-all
+          # Basic usage - block all traffic from selected countries
+          sudo rfw --iface eth0 --block-all-from CN
 
           # Block specific protocols from China
-          sudo rfw --iface eth0 --block-cn-http --block-cn-socks5
+          sudo rfw --iface eth0 --countries CN --block-http --block-socks5
 
           # Block email sending
-          sudo rfw --iface eth0 --block-email
+          sudo rfw --iface eth0 --all-sources --block-email
           ```
 
           ## Requirements

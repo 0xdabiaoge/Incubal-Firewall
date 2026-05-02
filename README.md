@@ -1,8 +1,9 @@
 # incudal-rfw
 
-Incudal RFW 是一个面向 Linux 宿主机的 IPv4 入站防火墙，基于 eBPF/XDP
-在网卡入口处直接丢弃不希望进入宿主机的流量。本项目主要服务于 Incus
-切机/托管场景，重点用于识别和阻断常见节点、代理、VPN 协议。
+Incudal RFW 是一个面向 Linux 宿主机的 IPv4 入站阻断工具。部署脚本默认使用
+`nftables` / `iptables` 写入内核防火墙规则，保证 Debian / Ubuntu 上稳定启动；
+高级模式仍可使用 eBPF/XDP 在网卡入口处做更细的协议识别。本项目主要服务于
+Incus 切机/托管场景，重点用于阻断常见节点、代理、VPN 协议相关流量。
 
 本项目主要参考并基于
 [narwhal-cloud/rfw](https://github.com/narwhal-cloud/rfw)
@@ -11,7 +12,9 @@ Incudal RFW 是一个面向 Linux 宿主机的 IPv4 入站防火墙，基于 eBP
 ## 功能概览
 
 - 仅处理 IPv4 入站流量，暂不处理 IPv6。
-- 使用 XDP 在网卡入口处阻断流量，减少进入用户态和协议栈后的开销。
+- 部署脚本支持 `nftables`、`iptables/ipset`、`xdp` 三种后端。
+- 默认使用内核防火墙后端，资源占用低，启动路径稳定。
+- XDP 后端可在网卡入口处阻断流量，支持更细的 payload 协议识别。
 - 支持 GeoIP 黑名单、白名单、无 GeoIP 三种作用范围。
 - 支持按协议特征识别常见节点协议，而不是单纯按端口阻断。
 - 支持 SOCKS、VLESS TCP、VMess TCP、HY2、TUIC、QUIC、WireGuard、
@@ -142,15 +145,24 @@ sudo ./rfw stats --group-by-port
 
 ## 正式部署脚本
 
-`rfw-test-deploy.sh` 用于在宿主机上直接部署 GitHub Release 产物。直接运行
-脚本会进入中文控制台；带参数运行则保持命令行模式。它会：
+`rfw-test-deploy.sh` 用于在 Debian / Ubuntu 宿主机上部署阻断规则。新版脚本不再把
+XDP 作为唯一启动路径，而是提供三个后端：
 
-1. 根据架构下载 Release 二进制；
-2. 安装到 `/root/rfw/rfw`；
-3. 写入 `/etc/systemd/system/rfw.service`；
-4. 启动并设置开机自启；
-5. 提供规则开关、日志、端口统计和完整卸载功能；
-6. 卸载时可一并清理脚本副本和当前脚本本身。
+- `nft`：推荐默认后端。使用 `nftables` + `systemd oneshot` 写入内核规则，资源占用低，启动稳定。
+- `iptables`：兼容后端。使用 `iptables` + `ipset`，适合老系统或 `nftables` 不可用环境。
+- `xdp`：高级后端。使用原 rfw eBPF/XDP 程序，支持 payload 深度协议识别，但依赖内核、网卡和 XDP 挂载能力。
+
+防火墙后端支持稳定阻断 IP 来源范围、国家 CIDR、TCP/UDP 端口和全入站规则；VLESS、
+VMess、FET、UDP-FET 等 payload 深度识别只有 `xdp` 后端支持。
+
+脚本会：
+
+1. 自动安装缺失依赖；
+2. 下载国家 IPv4 CIDR 数据；
+3. 生成 `nftables` 或 `iptables/ipset` 规则，或下载 Release 二进制并启动 XDP；
+4. 写入 `/etc/systemd/system/rfw.service`；
+5. 启动、设置开机自启并验证规则是否生效；
+6. 提供规则开关、日志、状态查看、重启和卸载功能。
 
 打开控制台：
 
@@ -160,19 +172,19 @@ sudo bash rfw-test-deploy.sh
 
 控制台主要功能：
 
-- 安装 / 重新部署：下载正式 Release，并按当前自选规则启动。
+- 安装 / 重新部署：选择 `nft`、`iptables` 或 `xdp` 后端并应用规则。
 - 规则开关管理：逐条启用或关闭阻断规则，保存后自动重写 systemd 并重启生效。
-- 查看当前配置：展示网卡、XDP 模式、作用范围、端口统计和完整启动命令。
-- 查看运行日志、拦截日志和实时日志。
-- 查看端口访问/拦截统计。
-- 重启服务或完整卸载并删除脚本。
+- 查看当前配置：展示后端、作用范围、规则和实际内核规则。
+- 查看运行日志。
+- 重启服务或卸载并清理规则。
 
 默认策略：
 
+- 默认后端为 `auto`，优先使用 `nft`，缺失时使用 `iptables`。
 - 默认只对中国来源 `CN` 生效。
-- 默认启用端口访问/拦截统计。
-- 默认启用推荐阻断规则：邮件、HTTP、SOCKS、SS/TCP-FET 严格、WireGuard、HY2、TUIC、SS UDP/UDP-FET、VLESS TCP、VMess TCP。
-- `QUIC 总开关` 和 `全入站阻断` 默认不开，需要你在规则开关里手动开启。
+- 默认启用推荐端口阻断规则：邮件、HTTP、SOCKS、WireGuard、QUIC、HY2、TUIC。
+- payload 深度识别规则默认不在防火墙后端生成；需要这些能力时使用 `--backend xdp`。
+- `全入站阻断` 默认不开，需要手动开启。
 
 SS / Shadowsocks 说明：
 
@@ -196,20 +208,32 @@ s              保存并应用
 直接使用默认推荐规则部署：
 
 ```bash
-sudo bash rfw-test-deploy.sh --install --iface eth0 --yes
+sudo bash rfw-test-deploy.sh --install --backend nft --countries CN --yes
+```
+
+兼容老系统部署：
+
+```bash
+sudo bash rfw-test-deploy.sh --install --backend iptables --countries CN --yes
+```
+
+使用 XDP 深度识别部署：
+
+```bash
+sudo bash rfw-test-deploy.sh --install --backend xdp --iface eth0 --xdp-mode skb --countries CN --yes
 ```
 
 直接传入完整 RFW 参数：
 
 ```bash
-sudo bash rfw-test-deploy.sh --iface eth0 --rules "--block-socks5 --block-hysteria2 --countries CN --log-port-access" --yes
+sudo bash rfw-test-deploy.sh --backend xdp --iface eth0 --rules "--block-socks5 --block-hysteria2 --countries CN --log-port-access" --yes
 ```
 
 只阻断中国来源是默认行为。如果要测试所有来源都被拦截，请在控制台的作用范围中选择
 “不区分国家”，或者命令行使用：
 
 ```bash
-sudo bash rfw-test-deploy.sh --iface eth0 --geo-mode none --yes
+sudo bash rfw-test-deploy.sh --backend nft --geo-mode none --yes
 ```
 
 常用操作：
@@ -217,19 +241,13 @@ sudo bash rfw-test-deploy.sh --iface eth0 --geo-mode none --yes
 ```bash
 sudo bash rfw-test-deploy.sh --status
 sudo bash rfw-test-deploy.sh --logs
-sudo bash rfw-test-deploy.sh --block-logs
-sudo bash rfw-test-deploy.sh --stats
 sudo bash rfw-test-deploy.sh --restart
 sudo bash rfw-test-deploy.sh --uninstall
 ```
 
-兼容说明：旧版 `--profile` 参数仍可解析，方便已有命令过渡；新的控制台不再展示
-模板概念，建议以后直接使用规则开关或 `--rules`。
-
-端口访问统计：
+端口访问统计仅 XDP 后端支持：
 
 ```bash
-sudo bash rfw-test-deploy.sh --stats
 sudo /root/rfw/rfw stats --blocked-only
 sudo /root/rfw/rfw stats --group-by-port
 sudo /root/rfw/rfw stats --port 443
