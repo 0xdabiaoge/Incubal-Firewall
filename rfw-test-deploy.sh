@@ -613,12 +613,18 @@ configure_scope_menu() {
         1)
             GEO_MODE="blacklist"
             COUNTRIES=$(prompt_input "请输入国家代码列表" "${COUNTRIES:-CN}")
-            [[ "$COUNTRIES" == "0" ]] && request_menu_back
+            if [[ "$COUNTRIES" == "0" ]]; then
+                request_menu_back
+                return 0
+            fi
             ;;
         2)
             GEO_MODE="whitelist"
             COUNTRIES=$(prompt_input "请输入允许的国家代码列表" "${COUNTRIES:-CN}")
-            [[ "$COUNTRIES" == "0" ]] && request_menu_back
+            if [[ "$COUNTRIES" == "0" ]]; then
+                request_menu_back
+                return 0
+            fi
             ;;
         3)
             GEO_MODE="none"
@@ -630,6 +636,7 @@ configure_scope_menu() {
             COUNTRIES="CN"
             ;;
     esac
+    return 0
 }
 
 configure_runtime_menu() {
@@ -978,8 +985,13 @@ install_or_update_rfw() {
 
 deploy_flow() {
     reset_install_options
-    select_rules_menu
-    if is_menu_back; then MENU_BACK="false"; return 0; fi
+    echo ""
+    echo -e "${BOLD}将使用推荐规则安装：${NC}${GREEN}$(rules_to_names "$SELECTED_RULES")${NC}"
+    echo -e "${DIM}需要改规则的话，可以这里先调整；也可以安装完成后回主菜单选“规则开关管理”。${NC}"
+    if prompt_yes_no "安装前是否调整阻断规则？" "no"; then
+        select_rules_menu
+        if is_menu_back; then MENU_BACK="false"; return 0; fi
+    fi
     configure_scope_menu
     if is_menu_back; then MENU_BACK="false"; return 0; fi
     configure_runtime_menu
