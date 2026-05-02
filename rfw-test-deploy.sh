@@ -969,7 +969,7 @@ Type=simple
 User=root
 Environment=RUST_LOG=info
 Environment=RFW_IFACE=$(systemd_escape_arg "$IFACE")
-ExecStartPre=-/bin/sh -c 'ip link set dev "$RFW_IFACE" xdp off 2>/dev/null || true; ip link set dev "$RFW_IFACE" xdpgeneric off 2>/dev/null || true; ip link set dev "$RFW_IFACE" xdpdrv off 2>/dev/null || true; ip link set dev "$RFW_IFACE" xdpoffload off 2>/dev/null || true; rm -f /sys/fs/bpf/rfw_port_access_log 2>/dev/null || true'
+ExecStartPre=-/bin/sh -c 'ip link set dev "\$RFW_IFACE" xdp off 2>/dev/null || true; ip link set dev "\$RFW_IFACE" xdpgeneric off 2>/dev/null || true; ip link set dev "\$RFW_IFACE" xdpdrv off 2>/dev/null || true; ip link set dev "\$RFW_IFACE" xdpoffload off 2>/dev/null || true; rm -f /sys/fs/bpf/rfw_port_access_log 2>/dev/null || true'
 ExecStart=${exec_start}
 Restart=on-failure
 RestartSec=3
