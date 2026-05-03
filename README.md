@@ -575,7 +575,39 @@ sudo RUST_LOG=info ./target/release/rfw --iface eth0 --block-cn-fet-strict
 
 ## 部署脚本
 
-项目提供独立部署脚本 `Incubal-Firewall`，用于在 Linux 服务器上下载 Release 二进制、安装 systemd 服务并启动 RFW。直接运行脚本会进入交互式主菜单，可执行部署、状态查看、服务启动/停止/重启、查看日志和卸载。
+项目提供独立部署脚本 `Incubal-Firewall`，用于在 Linux 服务器上下载 Release 二进制、安装 systemd 服务并启动 RFW。直接运行脚本会进入交互式主菜单，可执行部署、状态查看、服务启动/停止/重启、阻断统计、阻断日志、实时监控和卸载。
+
+### 脚本安装命令
+
+在 Linux 服务器上执行下面命令即可下载脚本并进入交互式部署菜单：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/0xdabiaoge/Incubal-Firewall/main/Incubal-Firewall -o Incubal-Firewall
+sudo bash Incubal-Firewall
+```
+
+也可以下载后直接使用命令行参数完成部署：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/0xdabiaoge/Incubal-Firewall/main/Incubal-Firewall -o Incubal-Firewall
+sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --log-port-access --yes
+```
+
+### 快捷命令调用
+
+部署完成后脚本会创建快捷命令 `incudalrfw`，指向 `/opt/incubal-firewall/rfw`，可直接调用 RFW 二进制：
+
+```bash
+sudo incudalrfw --help
+sudo incudalrfw stats --help
+sudo incudalrfw stats --blocked-only
+```
+
+如果服务器上已经安装了 `/opt/incubal-firewall/rfw`，但快捷命令不存在，可以执行：
+
+```bash
+sudo bash Incubal-Firewall --install-shortcut
+```
 
 > 使用部署脚本前，需要先在 GitHub Release 中发布 `rfw-x86_64-unknown-linux-musl` 或 `rfw-aarch64-unknown-linux-musl` 二进制文件。
 
@@ -613,12 +645,31 @@ sudo bash Incubal-Firewall --restart
 # 查看最近日志
 sudo bash Incubal-Firewall --logs
 
+# 查看阻断统计（需要部署时开启 --log-port-access）
+sudo bash Incubal-Firewall --blocked-stats
+sudo bash Incubal-Firewall --blocked-stats --stats-port 22
+sudo bash Incubal-Firewall --blocked-stats --stats-ip 1.2.3.4
+sudo bash Incubal-Firewall --watch-stats
+
+# 查看阻断明细日志 / 实时阻断监控
+sudo bash Incubal-Firewall --blocked-logs
+sudo bash Incubal-Firewall --watch-blocked
+
+# 修复快捷命令
+sudo bash Incubal-Firewall --install-shortcut
+
 # 查看服务日志
 journalctl -u rfw -f
 
 # 卸载
 sudo bash Incubal-Firewall --uninstall
 ```
+
+日志说明：
+
+- `--logs` 查看 `rfw.service` 原始日志，适合排查启动失败、GeoIP 下载和 XDP 加载问题。
+- `--blocked-logs` 从服务日志中筛选 `BLOCKED` 阻断明细，通常能看到来源 IP、源端口、目标端口和命中的规则。
+- `--blocked-stats` 读取 eBPF 端口访问统计表，能看到每个来源 IP 对每个目标端口累计允许/阻断次数；该功能需要部署时启用 `--log-port-access`。
 
 ## 参考资料
 

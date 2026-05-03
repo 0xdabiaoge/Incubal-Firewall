@@ -15,6 +15,7 @@ readonly PROJECT_NAME="Incubal-Firewall"
 readonly DEFAULT_RELEASE_URL="https://github.com/0xdabiaoge/Incubal-Firewall/releases/latest/download"
 readonly INSTALL_DIR="/opt/incubal-firewall"
 readonly BIN_PATH="${INSTALL_DIR}/rfw"
+readonly SHORTCUT_PATH="/usr/local/bin/incudalrfw"
 readonly SERVICE_NAME="rfw"
 readonly SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
@@ -37,6 +38,10 @@ LOG_PORT_ACCESS="false"
 YES="false"
 RELEASE_URL="$DEFAULT_RELEASE_URL"
 RFW_ARGS=()
+STATS_PORT=""
+STATS_IP=""
+STATS_GROUP_BY_PORT="false"
+STATS_INTERVAL="2"
 SUMMARY_RULES=""
 SUMMARY_GEO=""
 SUMMARY_LOG="关闭"
@@ -57,85 +62,184 @@ ${PROJECT_NAME} 部署脚本 v${SCRIPT_VERSION}
 
 简介:
   ${PROJECT_NAME} 用于在 Linux 服务器上部署和管理 RFW eBPF/XDP 防火墙。
-  直接运行脚本会进入交互式主菜单；携带参数运行时可用于自动化部署和服务管理。
+  直接运行脚本会进入交互式主菜单；携带参数运行时可用于自动化部署、服务管理、
+  阻断统计、日志查看和实时监控。
 
 基本用法:
   sudo bash Incubal-Firewall [选项]
 
 交互式菜单:
+  用途: 进入图形化文字菜单，适合手动部署、查看状态、查看阻断统计和卸载。
   sudo bash Incubal-Firewall
 
-一键部署示例:
-  sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --yes
-  sudo bash Incubal-Firewall --iface eth0 --block-all-from CN --yes
+一、部署命令
+  1. 自动选择网卡，使用默认规则屏蔽 CN 流量:
+     用途: 常见防护配置，默认屏蔽 Email / HTTP / SOCKS5 / FET-Strict / WireGuard。
+     说明: --yes 表示跳过交互确认，适合复制到服务器直接执行。
+     命令:
+       sudo bash Incubal-Firewall --countries CN --rules default --log-port-access --yes
 
-服务管理:
-  sudo bash Incubal-Firewall --status
-  sudo bash Incubal-Firewall --start
-  sudo bash Incubal-Firewall --stop
-  sudo bash Incubal-Firewall --restart
-  sudo bash Incubal-Firewall --logs
-  sudo bash Incubal-Firewall --uninstall
+  2. 指定网卡 eth0，并使用默认规则屏蔽 CN 流量:
+     用途: 服务器有多张网卡时，明确指定 XDP 绑定到哪张网卡。
+     参数: --iface 后面填写网卡名，可用 ip link 查看。
+     命令:
+       sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --log-port-access --yes
 
-部署参数:
-  --iface <IFACE>                 指定 XDP 绑定网卡
-  --rules <LIST>                  规则列表: default, all-protocols, none, all,
-                                  email,http,socks5,fet-strict,fet-loose,wireguard,quic
-                                  多个规则用逗号分隔，例如: http,socks5,wireguard
-  --countries <CODES>             黑名单国家代码，例如: CN,RU,KP
-  --allow-only-countries <CODES>  白名单国家代码，例如: US,JP,KR
-  --block-all-from <CODES>        阻止指定国家全部入站流量，例如: CN
-  --log-port-access              开启端口访问日志
-  --release-url <URL>             自定义 Release 下载根地址
-  --yes, -y                       非交互确认
+  3. 阻止指定国家的所有入站流量:
+     用途: 不做协议识别，直接阻断指定国家来源的全部入站流量。
+     参数: --block-all-from 后面填写国家代码，多个国家用英文逗号分隔。
+     命令:
+       sudo bash Incubal-Firewall --iface eth0 --block-all-from CN,RU --log-port-access --yes
 
-管理参数:
-  --status                        查看安装和服务状态
-  --start                         启动 rfw.service
-  --stop                          停止 rfw.service
-  --restart                       重启 rfw.service
-  --logs                          查看 rfw.service 最近 80 行日志
-  --uninstall                     卸载 RFW 服务和二进制
-  --help, -h                      显示帮助
+  4. 白名单模式，只允许指定国家访问:
+     用途: 只服务少量地区用户时使用，未在白名单内的国家会被阻断。
+     参数: --allow-only-countries 后面填写允许访问的国家代码。
+     命令:
+       sudo bash Incubal-Firewall --iface eth0 --allow-only-countries US,JP,KR --rules all --log-port-access --yes
 
-规则说明:
-  default       = email,http,socks5,fet-strict,wireguard
-  all-protocols = email,http,socks5,fet-strict,wireguard,quic
-  all           = 阻止所有入站流量
-  none          = 不启用协议屏蔽，可配合 --log-port-access 仅查看端口访问统计
+  5. 全局协议过滤，不限制国家:
+     用途: 不使用 GeoIP，所有来源都应用所选协议屏蔽规则。
+     参数: --rules 支持多个规则，用英文逗号分隔，不要加空格。
+     命令:
+       sudo bash Incubal-Firewall --iface eth0 --rules http,socks5,wireguard --log-port-access --yes
 
-GeoIP 说明:
-  --countries 是黑名单模式，只对指定国家应用所选规则。
-  --allow-only-countries 是白名单模式，只允许指定国家访问。
-  --block-all-from 是快捷模式，会转换为 --countries <CODES> --block-all。
-  如果不指定任何 GeoIP 参数，协议规则会应用到所有来源流量。
+二、部署参数说明
+  --iface <IFACE>
+     指定 XDP 绑定网卡，例如 eth0、ens18、ens33。
+     不填写时脚本会优先根据默认路由自动选择网卡。
 
-常用命令:
-  # 交互式部署和管理
-  sudo bash Incubal-Firewall
+  --rules <LIST>
+     指定协议屏蔽规则。可选值:
+       default       = email,http,socks5,fet-strict,wireguard
+       all-protocols = email,http,socks5,fet-strict,wireguard,quic
+       all           = 阻止所有入站流量
+       none          = 不启用协议屏蔽，可配合 --log-port-access 只做统计
+       自定义        = email,http,socks5,fet-strict,fet-loose,wireguard,quic
+     示例:
+       sudo bash Incubal-Firewall --iface eth0 --rules http,socks5,wireguard --yes
 
-  # 使用默认规则屏蔽 CN 流量
-  sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --yes
+  --countries <CODES>
+     黑名单国家模式，只对指定国家来源应用所选规则。
+     示例:
+       sudo bash Incubal-Firewall --iface eth0 --countries CN,RU --rules default --yes
 
-  # 只屏蔽 HTTP / SOCKS5 / WireGuard，不限制国家
-  sudo bash Incubal-Firewall --iface eth0 --rules http,socks5,wireguard --yes
+  --allow-only-countries <CODES>
+     白名单国家模式，只允许指定国家访问。
+     示例:
+       sudo bash Incubal-Firewall --iface eth0 --allow-only-countries US,JP,KR --rules all --yes
 
-  # 阻止 CN/RU 的所有入站流量
-  sudo bash Incubal-Firewall --iface eth0 --block-all-from CN,RU --yes
+  --block-all-from <CODES>
+     快捷阻断模式，阻止指定国家全部入站流量。
+     等价于给 RFW 传入 --countries <CODES> --block-all。
+     示例:
+       sudo bash Incubal-Firewall --iface eth0 --block-all-from CN --yes
 
-  # 白名单模式，只允许 US/JP/KR
-  sudo bash Incubal-Firewall --iface eth0 --allow-only-countries US,JP,KR --rules all --yes
+  --log-port-access
+     开启 eBPF 端口访问统计。开启后才能使用 --stats、--blocked-stats、--watch-stats。
+     建议部署时默认带上，方便后续查看来源 IP、端口、允许次数和阻断次数。
 
-  # 开启端口访问日志
-  sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --log-port-access --yes
+  --release-url <URL>
+     指定二进制下载根地址。默认使用 GitHub 最新 Release。
+     只有在你使用自建下载源、镜像源或测试 Release 时才需要改。
+     示例:
+       sudo bash Incubal-Firewall --release-url https://example.com/releases --yes
 
-  # 查看状态、日志、重启服务
-  sudo bash Incubal-Firewall --status
-  sudo bash Incubal-Firewall --logs
-  sudo bash Incubal-Firewall --restart
+  --yes, -y
+     非交互确认。脚本不会再询问确认，适合自动化部署或直接复制执行。
 
-  # 卸载
-  sudo bash Incubal-Firewall --uninstall
+三、快捷命令 incudalrfw
+  部署成功后，脚本会创建:
+    /usr/local/bin/incudalrfw -> /opt/incubal-firewall/rfw
+
+  查看 RFW 原生命令帮助:
+    sudo incudalrfw --help
+
+  查看 RFW 原生统计帮助:
+    sudo incudalrfw stats --help
+
+  直接查看阻断统计:
+    sudo incudalrfw stats --blocked-only
+
+  如果快捷命令不存在，但 /opt/incubal-firewall/rfw 已存在，可修复:
+    sudo bash Incubal-Firewall --install-shortcut
+
+四、阻断统计和端口访问统计
+  1. 查看全部端口访问统计:
+     用途: 显示允许和阻断的累计次数。
+     前提: 部署时必须开启 --log-port-access。
+     命令:
+       sudo bash Incubal-Firewall --stats
+
+  2. 只查看被阻断的访问统计:
+     用途: 查看哪些来源 IP 被阻断、访问了哪个协议和目标端口、累计阻断多少次。
+     命令:
+       sudo bash Incubal-Firewall --blocked-stats
+
+  3. 按目标端口过滤统计:
+     用途: 只看某个端口，例如 SSH 22、HTTP 80、HTTPS 443。
+     命令:
+       sudo bash Incubal-Firewall --blocked-stats --stats-port 22
+
+  4. 按来源 IP 过滤统计:
+     用途: 排查某一个来源 IP 是否被阻断或访问过哪些端口。
+     命令:
+       sudo bash Incubal-Firewall --blocked-stats --stats-ip 1.2.3.4
+
+  5. 按端口分组查看统计:
+     用途: 先按端口汇总，再查看每个端口下的来源 IP。
+     命令:
+       sudo bash Incubal-Firewall --blocked-stats --group-by-port
+
+  6. 实时刷新阻断统计:
+     用途: 类似监控面板，每隔几秒刷新一次阻断计数。
+     参数: --interval 指定刷新间隔，单位秒，默认 2 秒。
+     命令:
+       sudo bash Incubal-Firewall --watch-stats --interval 3
+
+五、阻断明细日志和原始日志
+  1. 查看最近阻断明细日志:
+     用途: 从 systemd 日志中筛选 BLOCKED 行，查看具体命中的规则、来源 IP、源端口和目标端口。
+     命令:
+       sudo bash Incubal-Firewall --blocked-logs
+
+  2. 实时监控阻断明细:
+     用途: 边测试边看实时阻断记录，按 Ctrl-C 退出。
+     命令:
+       sudo bash Incubal-Firewall --watch-blocked
+
+  3. 查看最近 80 行原始服务日志:
+     用途: 排查服务启动失败、GeoIP 下载失败、XDP 加载失败等问题。
+     命令:
+       sudo bash Incubal-Firewall --logs
+
+  4. 手动查看完整 systemd 日志:
+     用途: 不经过脚本，直接跟踪 rfw.service 输出。
+     命令:
+       journalctl -u rfw -f
+
+六、服务管理
+  查看安装路径、快捷命令、服务文件、启动命令和运行状态:
+    sudo bash Incubal-Firewall --status
+
+  启动服务:
+    sudo bash Incubal-Firewall --start
+
+  停止服务:
+    sudo bash Incubal-Firewall --stop
+
+  重启服务:
+    sudo bash Incubal-Firewall --restart
+
+七、卸载
+  用途: 停止并删除 rfw.service、/opt/incubal-firewall 和 /usr/local/bin/incudalrfw。
+  命令:
+    sudo bash Incubal-Firewall --uninstall
+
+八、注意事项
+  1. --stats / --blocked-stats / --watch-stats 依赖 --log-port-access。
+  2. --blocked-logs / --watch-blocked 依赖 rfw.service 的 journalctl 日志。
+  3. 如果你手动运行 /opt/incubal-firewall/rfw，而不是 systemd 服务，阻断日志会输出到当前终端。
+  4. --countries、--allow-only-countries、--block-all-from 不要同时混用。
 EOF
 }
 
@@ -145,7 +249,7 @@ show_banner() {
     echo -e "${CYAN}  ╔══════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}  ║                                                  ║${NC}"
     echo -e "${CYAN}  ║              ${BOLD}Incubal-Firewall${NC}${CYAN}                    ║${NC}"
-    echo -e "${CYAN}  ║              ${DIM}RFW XDP Firewall Setup${NC}${CYAN}               ║${NC}"
+    echo -e "${CYAN}  ║              ${DIM}RFW XDP Firewall Setup${NC}${CYAN}              ║${NC}"
     echo -e "${CYAN}  ║                                                  ║${NC}"
     echo -e "${CYAN}  ╚══════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -169,13 +273,16 @@ show_main_menu() {
     echo -e "    ${CYAN}3)${NC}  启动 RFW 服务"
     echo -e "    ${CYAN}4)${NC}  停止 RFW 服务"
     echo -e "    ${CYAN}5)${NC}  重启 RFW 服务"
-    echo -e "    ${CYAN}6)${NC}  查看最近日志"
+    echo -e "    ${CYAN}6)${NC}  查看阻断统计"
+    echo -e "    ${CYAN}7)${NC}  查看阻断明细日志"
+    echo -e "    ${CYAN}8)${NC}  实时监控阻断日志"
+    echo -e "    ${CYAN}9)${NC}  查看最近原始日志"
     echo ""
-    echo -e "    ${RED}7)${NC}  卸载 RFW"
-    echo -e "    ${CYAN}8)${NC}  使用帮助"
+    echo -e "    ${RED}10)${NC} 卸载 RFW"
+    echo -e "    ${CYAN}11)${NC} 使用帮助"
     echo -e "    ${CYAN}0)${NC}  退出"
     echo ""
-    echo -ne "  ${BOLD}请输入选项 [0-8]: ${NC}"
+    echo -ne "  ${BOLD}请输入选项 [0-11]: ${NC}"
 }
 
 reset_install_options() {
@@ -260,8 +367,31 @@ parse_args() {
                 ACTION="stop"; shift ;;
             --restart)
                 ACTION="restart"; shift ;;
+            --stats)
+                ACTION="stats"; shift ;;
+            --blocked-stats)
+                ACTION="blocked-stats"; shift ;;
+            --stats-port)
+                require_value "$1" "${2:-}"
+                STATS_PORT="${2:-}"; shift 2 ;;
+            --stats-ip)
+                require_value "$1" "${2:-}"
+                STATS_IP="${2:-}"; shift 2 ;;
+            --group-by-port)
+                STATS_GROUP_BY_PORT="true"; shift ;;
+            --watch-stats)
+                ACTION="watch-stats"; shift ;;
+            --interval)
+                require_value "$1" "${2:-}"
+                STATS_INTERVAL="${2:-}"; shift 2 ;;
+            --blocked-logs)
+                ACTION="blocked-logs"; shift ;;
+            --watch-blocked)
+                ACTION="watch-blocked"; shift ;;
             --logs)
                 ACTION="logs"; shift ;;
+            --install-shortcut)
+                ACTION="install-shortcut"; shift ;;
             --uninstall)
                 ACTION="uninstall"; shift ;;
             --help|-h)
@@ -283,6 +413,16 @@ parse_args() {
 
     if [[ -n "$COUNTRIES" && -n "$BLOCK_ALL_FROM" ]]; then
         error "--countries 与 --block-all-from 不能同时使用"
+        exit 1
+    fi
+
+    if [[ -n "$STATS_PORT" && ! "$STATS_PORT" =~ ^[0-9]+$ ]]; then
+        error "--stats-port 必须是端口号"
+        exit 1
+    fi
+
+    if [[ ! "$STATS_INTERVAL" =~ ^[1-9][0-9]*$ ]]; then
+        error "--interval 必须是正整数秒数"
         exit 1
     fi
 }
@@ -673,6 +813,22 @@ EOF
     log "服务文件已写入: ${SERVICE_FILE}"
 }
 
+install_shortcut() {
+    require_root
+    require_linux
+
+    if [[ ! -x "$BIN_PATH" ]]; then
+        error "未找到 RFW 二进制: ${BIN_PATH}"
+        error "请先执行部署，或确认 RFW 已安装到 ${INSTALL_DIR}"
+        exit 1
+    fi
+
+    mkdir -p "$(dirname "$SHORTCUT_PATH")"
+    ln -sfn "$BIN_PATH" "$SHORTCUT_PATH"
+    chmod 0755 "$BIN_PATH"
+    log "快捷命令已安装: ${SHORTCUT_PATH} -> ${BIN_PATH}"
+}
+
 start_service() {
     step "启动 RFW 服务..."
     systemctl enable "$SERVICE_NAME" >/dev/null 2>&1 || true
@@ -702,6 +858,7 @@ install_firewall() {
     stop_existing_service
     download_binary
     write_service
+    install_shortcut
     start_service
 
     echo ""
@@ -713,8 +870,9 @@ install_firewall() {
     echo ""
     echo -e "  查看状态: ${DIM}systemctl status ${SERVICE_NAME}${NC}"
     echo -e "  查看日志: ${DIM}journalctl -u ${SERVICE_NAME} -f${NC}"
+    echo -e "  快捷命令: ${DIM}sudo incudalrfw --help${NC}"
     if [[ "$LOG_PORT_ACCESS" == "true" ]]; then
-        echo -e "  查看统计: ${DIM}${BIN_PATH} stats${NC}"
+        echo -e "  查看统计: ${DIM}sudo incudalrfw stats --blocked-only${NC}"
     fi
     echo ""
 }
@@ -730,6 +888,14 @@ status_firewall() {
         echo -e "  二进制    :  ${GREEN}${BIN_PATH}${NC}"
     else
         echo -e "  二进制    :  ${DIM}未安装${NC}"
+    fi
+
+    if [[ -L "$SHORTCUT_PATH" || -x "$SHORTCUT_PATH" ]]; then
+        local shortcut_target=""
+        shortcut_target=$(readlink "$SHORTCUT_PATH" 2>/dev/null || true)
+        echo -e "  快捷命令  :  ${GREEN}${SHORTCUT_PATH}${NC}${shortcut_target:+ -> ${shortcut_target}}"
+    else
+        echo -e "  快捷命令  :  ${DIM}未安装，可执行 sudo bash Incubal-Firewall --install-shortcut${NC}"
     fi
 
     if [[ -f "$SERVICE_FILE" ]]; then
@@ -752,6 +918,81 @@ status_firewall() {
     fi
 
     divider
+}
+
+require_rfw_binary() {
+    require_linux
+
+    if [[ -x "$SHORTCUT_PATH" ]]; then
+        echo "$SHORTCUT_PATH"
+        return
+    fi
+
+    if [[ -x "$BIN_PATH" ]]; then
+        echo "$BIN_PATH"
+        return
+    fi
+
+    error "未找到 RFW 二进制"
+    error "请先执行部署，或确认 ${BIN_PATH} 存在"
+    exit 1
+}
+
+build_stats_args() {
+    local mode="$1"
+    local args=("stats")
+
+    if [[ "$mode" == "blocked" ]]; then
+        args+=("--blocked-only")
+    fi
+
+    if [[ -n "$STATS_PORT" ]]; then
+        args+=("--port" "$STATS_PORT")
+    fi
+
+    if [[ -n "$STATS_IP" ]]; then
+        args+=("--ip" "$STATS_IP")
+    fi
+
+    if [[ "$STATS_GROUP_BY_PORT" == "true" ]]; then
+        args+=("--group-by-port")
+    fi
+
+    printf '%s\n' "${args[@]}"
+}
+
+show_port_stats() {
+    local mode="${1:-all}"
+    local rfw_bin
+    rfw_bin=$(require_rfw_binary)
+    local args=()
+    mapfile -t args < <(build_stats_args "$mode")
+
+    divider
+    if [[ "$mode" == "blocked" ]]; then
+        echo -e "  ${BOLD}阻断统计（来源 IP / 协议 / 目标端口 / 次数）${NC}"
+    else
+        echo -e "  ${BOLD}端口访问统计（允许 / 阻断累计）${NC}"
+    fi
+    divider
+    "$rfw_bin" "${args[@]}"
+    divider
+}
+
+watch_port_stats() {
+    local rfw_bin
+    rfw_bin=$(require_rfw_binary)
+    local args=()
+    mapfile -t args < <(build_stats_args "blocked")
+
+    info "每 ${STATS_INTERVAL} 秒刷新阻断统计，按 Ctrl-C 退出"
+    while true; do
+        clear 2>/dev/null || true
+        echo -e "${BOLD}${PROJECT_NAME} 阻断统计监控$(date '+%F %T')${NC}"
+        divider
+        "$rfw_bin" "${args[@]}" || true
+        sleep "$STATS_INTERVAL"
+    done
 }
 
 service_control() {
@@ -787,6 +1028,35 @@ show_recent_logs() {
     divider
 }
 
+show_blocked_logs() {
+    ensure_systemctl
+
+    if ! systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
+        warn "RFW 服务未安装"
+        warn "如果你是手动运行 /opt/incubal-firewall/rfw，阻断明细会输出在当前终端，而不是 journalctl"
+        return 0
+    fi
+
+    divider
+    echo -e "  ${BOLD}最近阻断明细日志${NC}"
+    divider
+    journalctl -u "$SERVICE_NAME" -n 300 --no-pager | grep --color=never -E "BLOCKED|被阻止|阻止|阻断" || true
+    divider
+}
+
+watch_blocked_logs() {
+    ensure_systemctl
+
+    if ! systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
+        warn "RFW 服务未安装"
+        warn "如果你是手动运行 /opt/incubal-firewall/rfw，阻断明细会输出在当前终端，而不是 journalctl"
+        return 0
+    fi
+
+    info "实时跟踪阻断明细日志，按 Ctrl-C 退出"
+    journalctl -u "$SERVICE_NAME" -f --no-pager | grep --line-buffered -E "BLOCKED|被阻止|阻止|阻断"
+}
+
 uninstall_firewall() {
     require_root
     require_linux
@@ -799,6 +1069,7 @@ uninstall_firewall() {
     echo -e "  将删除:"
     echo -e "    ${RED}•${NC} ${SERVICE_FILE}"
     echo -e "    ${RED}•${NC} ${INSTALL_DIR}"
+    echo -e "    ${RED}•${NC} ${SHORTCUT_PATH}"
     echo ""
 
     if [[ "$YES" != "true" ]]; then
@@ -815,6 +1086,7 @@ uninstall_firewall() {
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     rm -f "$SERVICE_FILE" 2>/dev/null || true
+    rm -f "$SHORTCUT_PATH" 2>/dev/null || true
     rm -rf "$INSTALL_DIR" 2>/dev/null || true
     systemctl daemon-reload 2>/dev/null || true
     log "Incubal-Firewall 已卸载"
@@ -847,12 +1119,24 @@ run_interactive_menu() {
                 service_control restart "重启"
                 pause_screen ;;
             6)
-                show_recent_logs
+                STATS_PORT=""
+                STATS_IP=""
+                STATS_GROUP_BY_PORT="false"
+                show_port_stats "blocked"
                 pause_screen ;;
             7)
-                uninstall_firewall
+                show_blocked_logs
                 pause_screen ;;
             8)
+                watch_blocked_logs
+                pause_screen ;;
+            9)
+                show_recent_logs
+                pause_screen ;;
+            10)
+                uninstall_firewall
+                pause_screen ;;
+            11)
                 usage
                 pause_screen ;;
             0)
@@ -883,7 +1167,13 @@ main() {
         start) service_control start "启动" ;;
         stop) service_control stop "停止" ;;
         restart) service_control restart "重启" ;;
+        stats) show_port_stats "all" ;;
+        blocked-stats) show_port_stats "blocked" ;;
+        watch-stats) watch_port_stats ;;
+        blocked-logs) show_blocked_logs ;;
+        watch-blocked) watch_blocked_logs ;;
         logs) show_recent_logs ;;
+        install-shortcut) install_shortcut ;;
         uninstall) uninstall_firewall ;;
         *)
             error "未知动作: ${ACTION}"

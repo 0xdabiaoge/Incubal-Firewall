@@ -117,13 +117,20 @@ jobs:
 
           ```bash
           # Default rules for CN: Email / HTTP / SOCKS5 / FET-Strict / WireGuard
-          sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --yes
+          sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --log-port-access --yes
 
           # Block all inbound traffic from CN
-          sudo bash Incubal-Firewall --iface eth0 --block-all-from CN --yes
+          sudo bash Incubal-Firewall --iface eth0 --block-all-from CN --log-port-access --yes
+
+          # Shortcut command installed by the deployment script
+          sudo incudalrfw --help
+          sudo incudalrfw stats --blocked-only
 
           # Service management
           sudo bash Incubal-Firewall --status
+          sudo bash Incubal-Firewall --blocked-stats
+          sudo bash Incubal-Firewall --blocked-logs
+          sudo bash Incubal-Firewall --watch-blocked
           sudo bash Incubal-Firewall --logs
           sudo bash Incubal-Firewall --restart
           ```
@@ -149,7 +156,10 @@ jobs:
           sudo rfw --iface eth0 --countries CN --block-all
 
           # Block HTTP and SOCKS5 from CN
-          sudo rfw --iface eth0 --countries CN --block-http --block-socks5
+          sudo rfw --iface eth0 --countries CN --block-http --block-socks5 --log-port-access
+
+          # View blocked source IP, target port, and counters
+          sudo rfw stats --blocked-only
 
           # Block email sending
           sudo rfw --iface eth0 --block-email
