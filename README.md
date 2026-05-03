@@ -575,22 +575,22 @@ sudo RUST_LOG=info ./target/release/rfw --iface eth0 --block-cn-fet-strict
 
 ## 部署脚本
 
-项目提供独立部署脚本 `Incubal-Firewall`，用于在 Linux 服务器上下载 Release 二进制、安装 systemd 服务并启动 RFW。直接运行脚本会进入交互式主菜单，可执行部署、状态查看、服务启动/停止/重启、阻断统计、阻断日志、实时监控和卸载。
+项目提供独立部署脚本 `Incubal-Firewall.sh`，用于在 Linux 服务器上下载 Release 二进制、安装 systemd 服务并启动 RFW。直接运行脚本会进入交互式主菜单，可执行部署、状态查看、服务启动/停止/重启、阻断统计、阻断日志、实时监控和卸载。
 
 ### 脚本安装命令
 
 在 Linux 服务器上执行下面命令即可下载脚本并进入交互式部署菜单：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/0xdabiaoge/Incubal-Firewall/main/Incubal-Firewall -o Incubal-Firewall
-sudo bash Incubal-Firewall
+curl -fsSL https://raw.githubusercontent.com/0xdabiaoge/Incubal-Firewall/main/Incubal-Firewall.sh -o Incubal-Firewall.sh
+sudo bash Incubal-Firewall.sh
 ```
 
 也可以下载后直接使用命令行参数完成部署：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/0xdabiaoge/Incubal-Firewall/main/Incubal-Firewall -o Incubal-Firewall
-sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --log-port-access --yes
+curl -fsSL https://raw.githubusercontent.com/0xdabiaoge/Incubal-Firewall/main/Incubal-Firewall.sh -o Incubal-Firewall.sh
+sudo bash Incubal-Firewall.sh --iface eth0 --countries CN --rules default --log-port-access --yes
 ```
 
 ### 快捷命令调用
@@ -606,7 +606,7 @@ sudo incudalrfw stats --blocked-only
 如果服务器上已经安装了 `/opt/incubal-firewall/rfw`，但快捷命令不存在，可以执行：
 
 ```bash
-sudo bash Incubal-Firewall --install-shortcut
+sudo bash Incubal-Firewall.sh --install-shortcut
 ```
 
 > 使用部署脚本前，需要先在 GitHub Release 中发布 `rfw-x86_64-unknown-linux-musl` 或 `rfw-aarch64-unknown-linux-musl` 二进制文件。
@@ -614,55 +614,55 @@ sudo bash Incubal-Firewall --install-shortcut
 ### 交互式部署
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/0xdabiaoge/Incubal-Firewall/main/Incubal-Firewall -o Incubal-Firewall
-sudo bash Incubal-Firewall
+curl -fsSL https://raw.githubusercontent.com/0xdabiaoge/Incubal-Firewall/main/Incubal-Firewall.sh -o Incubal-Firewall.sh
+sudo bash Incubal-Firewall.sh
 ```
 
 ### 命令行部署
 
 ```bash
 # 默认规则：Email / HTTP / SOCKS5 / FET-Strict / WireGuard，屏蔽 CN
-sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --yes
+sudo bash Incubal-Firewall.sh --iface eth0 --countries CN --rules default --yes
 
 # 阻止指定国家的所有入站流量
-sudo bash Incubal-Firewall --iface eth0 --block-all-from CN --yes
+sudo bash Incubal-Firewall.sh --iface eth0 --block-all-from CN --yes
 
 # 全局协议过滤，不使用 GeoIP
-sudo bash Incubal-Firewall --iface eth0 --rules http,socks5,wireguard --yes
+sudo bash Incubal-Firewall.sh --iface eth0 --rules http,socks5,wireguard --yes
 ```
 
 ### 管理命令
 
 ```bash
 # 查看状态
-sudo bash Incubal-Firewall --status
+sudo bash Incubal-Firewall.sh --status
 
 # 启动 / 停止 / 重启服务
-sudo bash Incubal-Firewall --start
-sudo bash Incubal-Firewall --stop
-sudo bash Incubal-Firewall --restart
+sudo bash Incubal-Firewall.sh --start
+sudo bash Incubal-Firewall.sh --stop
+sudo bash Incubal-Firewall.sh --restart
 
 # 查看最近日志
-sudo bash Incubal-Firewall --logs
+sudo bash Incubal-Firewall.sh --logs
 
 # 查看阻断统计（需要部署时开启 --log-port-access）
-sudo bash Incubal-Firewall --blocked-stats
-sudo bash Incubal-Firewall --blocked-stats --stats-port 22
-sudo bash Incubal-Firewall --blocked-stats --stats-ip 1.2.3.4
-sudo bash Incubal-Firewall --watch-stats
+sudo bash Incubal-Firewall.sh --blocked-stats
+sudo bash Incubal-Firewall.sh --blocked-stats --stats-port 22
+sudo bash Incubal-Firewall.sh --blocked-stats --stats-ip 1.2.3.4
+sudo bash Incubal-Firewall.sh --watch-stats
 
 # 查看阻断明细日志 / 实时阻断监控
-sudo bash Incubal-Firewall --blocked-logs
-sudo bash Incubal-Firewall --watch-blocked
+sudo bash Incubal-Firewall.sh --blocked-logs
+sudo bash Incubal-Firewall.sh --watch-blocked
 
 # 修复快捷命令
-sudo bash Incubal-Firewall --install-shortcut
+sudo bash Incubal-Firewall.sh --install-shortcut
 
 # 查看服务日志
 journalctl -u rfw -f
 
 # 卸载
-sudo bash Incubal-Firewall --uninstall
+sudo bash Incubal-Firewall.sh --uninstall
 ```
 
 日志说明：

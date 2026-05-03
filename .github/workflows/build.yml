@@ -109,30 +109,30 @@ jobs:
           Recommended interactive setup:
 
           ```bash
-          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/Incubal-Firewall -o Incubal-Firewall
-          sudo bash Incubal-Firewall
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/Incubal-Firewall.sh -o Incubal-Firewall.sh
+          sudo bash Incubal-Firewall.sh
           ```
 
           Non-interactive examples:
 
           ```bash
           # Default rules for CN: Email / HTTP / SOCKS5 / FET-Strict / WireGuard
-          sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --log-port-access --yes
+          sudo bash Incubal-Firewall.sh --iface eth0 --countries CN --rules default --log-port-access --yes
 
           # Block all inbound traffic from CN
-          sudo bash Incubal-Firewall --iface eth0 --block-all-from CN --log-port-access --yes
+          sudo bash Incubal-Firewall.sh --iface eth0 --block-all-from CN --log-port-access --yes
 
           # Shortcut command installed by the deployment script
           sudo incudalrfw --help
           sudo incudalrfw stats --blocked-only
 
           # Service management
-          sudo bash Incubal-Firewall --status
-          sudo bash Incubal-Firewall --blocked-stats
-          sudo bash Incubal-Firewall --blocked-logs
-          sudo bash Incubal-Firewall --watch-blocked
-          sudo bash Incubal-Firewall --logs
-          sudo bash Incubal-Firewall --restart
+          sudo bash Incubal-Firewall.sh --status
+          sudo bash Incubal-Firewall.sh --blocked-stats
+          sudo bash Incubal-Firewall.sh --blocked-logs
+          sudo bash Incubal-Firewall.sh --watch-blocked
+          sudo bash Incubal-Firewall.sh --logs
+          sudo bash Incubal-Firewall.sh --restart
           ```
 
           ## Manual binary installation
