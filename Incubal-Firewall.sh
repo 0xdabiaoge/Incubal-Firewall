@@ -10,12 +10,13 @@
 # ============================================================================
 set -euo pipefail
 
-readonly SCRIPT_VERSION="1.0.4"
+readonly SCRIPT_VERSION="1.0.5"
 readonly PROJECT_NAME="Incubal-Firewall"
 readonly DEFAULT_RELEASE_URL="https://github.com/0xdabiaoge/Incubal-Firewall/releases/latest/download"
 readonly INSTALL_DIR="/opt/incubal-firewall"
 readonly BIN_PATH="${INSTALL_DIR}/rfw"
 readonly MANAGER_PATH="${INSTALL_DIR}/Incubal-Firewall.sh"
+readonly SOURCE_PATH_FILE="${INSTALL_DIR}/source-script.path"
 readonly SHORTCUT_PATH="/usr/local/bin/incudalrfw"
 readonly SERVICE_NAME="rfw"
 readonly SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -917,6 +918,9 @@ install_shortcut() {
         target_script=$(readlink -f "$MANAGER_PATH" 2>/dev/null || printf '%s\n' "$MANAGER_PATH")
         if [[ "$source_script" != "$target_script" ]]; then
             cp -f "$source_script" "$MANAGER_PATH"
+            printf '%s\n' "$source_script" > "$SOURCE_PATH_FILE"
+        elif [[ ! -f "$SOURCE_PATH_FILE" ]]; then
+            printf '%s\n' "$source_script" > "$SOURCE_PATH_FILE"
         fi
     elif [[ ! -f "$MANAGER_PATH" ]]; then
         error "未找到部署脚本实体文件，无法创建管理快捷命令"
@@ -1225,6 +1229,31 @@ uninstall_firewall() {
     local script_dir=""
     script_dir=$(dirname "$script_path")
     local legacy_script_path="${script_dir}/Incubal-Firewall"
+    local source_script_path=""
+    if [[ -f "$SOURCE_PATH_FILE" ]]; then
+        source_script_path=$(head -n 1 "$SOURCE_PATH_FILE" 2>/dev/null || true)
+    fi
+    local source_script_candidates=()
+    local candidate=""
+    local resolved_candidate=""
+    for candidate in \
+        "$source_script_path" \
+        "${PWD}/Incubal-Firewall.sh" \
+        "${HOME:-}/Incubal-Firewall.sh" \
+        "/root/Incubal-Firewall.sh"; do
+        [[ -n "$candidate" && -f "$candidate" ]] || continue
+        resolved_candidate=$(readlink -f "$candidate" 2>/dev/null || printf '%s\n' "$candidate")
+        [[ "$resolved_candidate" != "$script_path" && "$resolved_candidate" != "$MANAGER_PATH" ]] || continue
+        local exists="false"
+        local existing_candidate=""
+        for existing_candidate in "${source_script_candidates[@]}"; do
+            if [[ "$existing_candidate" == "$resolved_candidate" ]]; then
+                exists="true"
+                break
+            fi
+        done
+        [[ "$exists" == "true" ]] || source_script_candidates+=("$resolved_candidate")
+    done
 
     echo ""
     divider
@@ -1238,6 +1267,9 @@ uninstall_firewall() {
     if [[ -f "$MANAGER_PATH" ]]; then
         echo -e "    ${RED}•${NC} ${MANAGER_PATH}"
     fi
+    for candidate in "${source_script_candidates[@]}"; do
+        echo -e "    ${RED}•${NC} ${candidate}"
+    done
     if [[ -f "$script_path" ]]; then
         echo -e "    ${RED}•${NC} ${script_path}"
     else
@@ -1264,6 +1296,10 @@ uninstall_firewall() {
     rm -f "$SERVICE_FILE" 2>/dev/null || true
     rm -f "$SHORTCUT_PATH" 2>/dev/null || true
     cleanup_bpf_pin
+    for candidate in "${source_script_candidates[@]}"; do
+        info "删除原始部署脚本: ${candidate}"
+        rm -f "$candidate" 2>/dev/null || warn "原始部署脚本删除失败，请手动删除: ${candidate}"
+    done
     rm -f "$MANAGER_PATH" 2>/dev/null || true
     rm -rf "$INSTALL_DIR" 2>/dev/null || true
     systemctl daemon-reload 2>/dev/null || true
