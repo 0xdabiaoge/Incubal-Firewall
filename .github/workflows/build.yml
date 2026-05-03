@@ -104,30 +104,52 @@ jobs:
         prerelease: false
         generate_release_notes: true
         body: |
-          ## Installation
+          ## Install with deployment script
 
-          Download the binary for your platform:
+          Recommended interactive setup:
 
           ```bash
-          # For x86_64 (Intel/AMD)
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/rfw-x86_64-unknown-linux-musl
-          chmod +x rfw-x86_64-unknown-linux-musl
-          sudo mv rfw-x86_64-unknown-linux-musl /usr/local/bin/rfw
-
-          # For ARM64 (Raspberry Pi, AWS Graviton, etc.)
-          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/rfw-aarch64-unknown-linux-musl
-          chmod +x rfw-aarch64-unknown-linux-musl
-          sudo mv rfw-aarch64-unknown-linux-musl /usr/local/bin/rfw
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/Incubal-Firewall -o Incubal-Firewall
+          sudo bash Incubal-Firewall
           ```
 
-          ## Usage
+          Non-interactive examples:
 
           ```bash
-          # Basic usage - block all China inbound traffic
-          sudo rfw --iface eth0 --block-cn-all
+          # Default rules for CN: Email / HTTP / SOCKS5 / FET-Strict / WireGuard
+          sudo bash Incubal-Firewall --iface eth0 --countries CN --rules default --yes
 
-          # Block specific protocols from China
-          sudo rfw --iface eth0 --block-cn-http --block-cn-socks5
+          # Block all inbound traffic from CN
+          sudo bash Incubal-Firewall --iface eth0 --block-all-from CN --yes
+
+          # Service management
+          sudo bash Incubal-Firewall --status
+          sudo bash Incubal-Firewall --logs
+          sudo bash Incubal-Firewall --restart
+          ```
+
+          ## Manual binary installation
+
+          ```bash
+          # x86_64 (Intel/AMD)
+          curl -fL https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/rfw-x86_64-unknown-linux-musl -o rfw
+          chmod +x rfw
+          sudo mv rfw /usr/local/bin/rfw
+
+          # ARM64 (Raspberry Pi, AWS Graviton, etc.)
+          curl -fL https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/rfw-aarch64-unknown-linux-musl -o rfw
+          chmod +x rfw
+          sudo mv rfw /usr/local/bin/rfw
+          ```
+
+          ## Manual usage
+
+          ```bash
+          # Block all inbound traffic from CN
+          sudo rfw --iface eth0 --countries CN --block-all
+
+          # Block HTTP and SOCKS5 from CN
+          sudo rfw --iface eth0 --countries CN --block-http --block-socks5
 
           # Block email sending
           sudo rfw --iface eth0 --block-email
