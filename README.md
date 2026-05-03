@@ -623,6 +623,13 @@ sudo incudalrfw stats --blocked-only
 sudo bash Incubal-Firewall.sh --install-shortcut
 ```
 
+从旧版脚本升级时，如果 `incudalrfw` 仍然直接运行 RFW 二进制并提示 `unknown network interface eth0`，重新执行一次部署即可修复旧的快捷链接：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/0xdabiaoge/Incubal-Firewall/main/Incubal-Firewall.sh -o Incubal-Firewall.sh
+sudo bash Incubal-Firewall.sh
+```
+
 > 使用部署脚本前，需要先在 GitHub Release 中发布 `rfw-x86_64-unknown-linux-musl` 或 `rfw-aarch64-unknown-linux-musl` 二进制文件。
 
 ### 交互式部署

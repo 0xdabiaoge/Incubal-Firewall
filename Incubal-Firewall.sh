@@ -10,7 +10,7 @@
 # ============================================================================
 set -euo pipefail
 
-readonly SCRIPT_VERSION="1.0.3"
+readonly SCRIPT_VERSION="1.0.4"
 readonly PROJECT_NAME="Incubal-Firewall"
 readonly DEFAULT_RELEASE_URL="https://github.com/0xdabiaoge/Incubal-Firewall/releases/latest/download"
 readonly INSTALL_DIR="/opt/incubal-firewall"
@@ -276,6 +276,8 @@ pause_screen() {
 }
 
 show_main_menu() {
+    show_runtime_overview
+
     echo -e "  ${BOLD}请选择操作：${NC}"
     echo ""
     echo -e "    ${CYAN}1)${NC}  部署 / 重新部署 RFW"
@@ -771,7 +773,74 @@ stop_existing_service() {
 
 service_exists() {
     [[ -f "$SERVICE_FILE" ]] && return 0
+    command -v systemctl >/dev/null 2>&1 || return 1
     systemctl cat "$SERVICE_NAME" >/dev/null 2>&1
+}
+
+show_runtime_overview() {
+    local bin_state="${DIM}未安装${NC}"
+    local service_state="${DIM}未注册${NC}"
+    local enabled_state="${DIM}unknown${NC}"
+    local shortcut_state="${DIM}未安装${NC}"
+    local manager_state="${DIM}未安装${NC}"
+    local iface_state="${DIM}未知${NC}"
+    local exec_start=""
+
+    if [[ -x "$BIN_PATH" ]]; then
+        bin_state="${GREEN}已安装${NC}"
+    elif [[ -f "$BIN_PATH" ]]; then
+        bin_state="${YELLOW}存在但不可执行${NC}"
+    fi
+
+    if [[ -L "$SHORTCUT_PATH" ]]; then
+        local shortcut_target=""
+        shortcut_target=$(readlink "$SHORTCUT_PATH" 2>/dev/null || true)
+        if [[ "$shortcut_target" == "$BIN_PATH" ]]; then
+            shortcut_state="${RED}旧版二进制入口${NC}"
+        else
+            shortcut_state="${GREEN}已安装${NC}${shortcut_target:+ ${DIM}-> ${shortcut_target}${NC}}"
+        fi
+    elif [[ -x "$SHORTCUT_PATH" ]]; then
+        shortcut_state="${GREEN}已安装${NC}"
+    fi
+
+    if [[ -f "$MANAGER_PATH" ]]; then
+        manager_state="${GREEN}已安装${NC}"
+    fi
+
+    if command -v systemctl >/dev/null 2>&1 && service_exists; then
+        local active=""
+        active=$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || true)
+        local enabled=""
+        enabled=$(systemctl is-enabled "$SERVICE_NAME" 2>/dev/null || true)
+        if [[ "$active" == "active" ]]; then
+            service_state="${GREEN}运行中${NC}"
+        elif [[ "$active" == "inactive" ]]; then
+            service_state="${YELLOW}已停止${NC}"
+        elif [[ "$active" == "failed" ]]; then
+            service_state="${RED}失败${NC}"
+        else
+            service_state="${YELLOW}${active:-unknown}${NC}"
+        fi
+        enabled_state="${enabled:-unknown}"
+
+        if [[ -f "$SERVICE_FILE" ]]; then
+            exec_start=$(grep '^ExecStart=' "$SERVICE_FILE" 2>/dev/null || true)
+            if [[ "$exec_start" =~ --iface[[:space:]]+([^[:space:]]+) ]]; then
+                iface_state="${BASH_REMATCH[1]}"
+            fi
+        fi
+    fi
+
+    divider
+    echo -e "  ${BOLD}当前状态${NC}"
+    echo -e "  RFW 二进制 : ${bin_state}"
+    echo -e "  RFW 服务   : ${service_state} / ${enabled_state}"
+    echo -e "  监听网卡   : ${iface_state}"
+    echo -e "  管理命令   : ${shortcut_state}"
+    echo -e "  管理脚本   : ${manager_state}"
+    divider
+    echo ""
 }
 
 cleanup_bpf_pin() {
@@ -857,6 +926,9 @@ install_shortcut() {
     chmod 0755 "$MANAGER_PATH"
 
     mkdir -p "$(dirname "$SHORTCUT_PATH")"
+    # 旧版本把 incudalrfw 做成指向 rfw 二进制的 symlink。
+    # 必须先删除路径本身，否则重定向会跟随 symlink 写坏目标二进制。
+    rm -f "$SHORTCUT_PATH"
     cat > "$SHORTCUT_PATH" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1206,6 +1278,7 @@ uninstall_firewall() {
     fi
 
     log "Incubal-Firewall 已彻底卸载"
+    exit 0
 }
 
 run_interactive_menu() {
