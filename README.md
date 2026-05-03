@@ -595,15 +595,29 @@ sudo bash Incubal-Firewall.sh --iface eth0 --countries CN --rules default --log-
 
 ### 快捷命令调用
 
-部署完成后脚本会创建快捷命令 `incudalrfw`，指向 `/opt/incubal-firewall/rfw`，可直接调用 RFW 二进制：
+部署完成后脚本会创建快捷命令 `incudalrfw`，作为 Incubal-Firewall 管理入口。直接输入会进入交互式菜单，不会误启动 RFW 二进制：
 
 ```bash
+sudo incudalrfw
 sudo incudalrfw --help
-sudo incudalrfw stats --help
+sudo incudalrfw --blocked-stats
+sudo incudalrfw --blocked-logs
+```
+
+如果需要调用 RFW 原生命令，可以使用 `raw` 子命令，或者直接运行 `/opt/incubal-firewall/rfw`：
+
+```bash
+sudo incudalrfw raw --help
+sudo incudalrfw raw stats --help
+```
+
+兼容原来的 RFW 统计写法仍然保留：
+
+```bash
 sudo incudalrfw stats --blocked-only
 ```
 
-如果服务器上已经安装了 `/opt/incubal-firewall/rfw`，但快捷命令不存在，可以执行：
+如果快捷命令不存在，可以执行：
 
 ```bash
 sudo bash Incubal-Firewall.sh --install-shortcut

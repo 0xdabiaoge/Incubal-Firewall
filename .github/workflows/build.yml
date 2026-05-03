@@ -122,9 +122,11 @@ jobs:
           # Block all inbound traffic from CN
           sudo bash Incubal-Firewall.sh --iface eth0 --block-all-from CN --log-port-access --yes
 
-          # Shortcut command installed by the deployment script
+          # Management shortcut installed by the deployment script
+          sudo incudalrfw
           sudo incudalrfw --help
-          sudo incudalrfw stats --blocked-only
+          sudo incudalrfw --blocked-stats
+          sudo incudalrfw raw stats --blocked-only
 
           # Service management
           sudo bash Incubal-Firewall.sh --status

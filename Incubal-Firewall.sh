@@ -10,11 +10,12 @@
 # ============================================================================
 set -euo pipefail
 
-readonly SCRIPT_VERSION="1.0.2"
+readonly SCRIPT_VERSION="1.0.3"
 readonly PROJECT_NAME="Incubal-Firewall"
 readonly DEFAULT_RELEASE_URL="https://github.com/0xdabiaoge/Incubal-Firewall/releases/latest/download"
 readonly INSTALL_DIR="/opt/incubal-firewall"
 readonly BIN_PATH="${INSTALL_DIR}/rfw"
+readonly MANAGER_PATH="${INSTALL_DIR}/Incubal-Firewall.sh"
 readonly SHORTCUT_PATH="/usr/local/bin/incudalrfw"
 readonly SERVICE_NAME="rfw"
 readonly SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -149,19 +150,26 @@ ${PROJECT_NAME} 部署脚本 v${SCRIPT_VERSION}
      非交互确认。脚本不会再询问确认，适合自动化部署或直接复制执行。
 
 三、快捷命令 incudalrfw
-  部署成功后，脚本会创建:
-    /usr/local/bin/incudalrfw -> /opt/incubal-firewall/rfw
+  部署成功后，脚本会创建管理入口:
+    /usr/local/bin/incudalrfw -> /opt/incubal-firewall/Incubal-Firewall.sh
 
-  查看 RFW 原生命令帮助:
+  直接进入交互式菜单:
+    sudo incudalrfw
+
+  查看部署脚本帮助:
     sudo incudalrfw --help
 
-  查看 RFW 原生统计帮助:
-    sudo incudalrfw stats --help
-
   直接查看阻断统计:
+    sudo incudalrfw --blocked-stats
+
+  调用 RFW 原生命令:
+    sudo incudalrfw raw --help
+    sudo incudalrfw raw stats --help
+
+  兼容原来的 RFW 统计写法:
     sudo incudalrfw stats --blocked-only
 
-  如果快捷命令不存在，但 /opt/incubal-firewall/rfw 已存在，可修复:
+  如果快捷命令不存在，可修复管理入口:
     sudo bash Incubal-Firewall.sh --install-shortcut
 
 四、阻断统计和端口访问统计
@@ -754,11 +762,16 @@ confirm_install() {
 }
 
 stop_existing_service() {
-    if systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
+    if service_exists; then
         info "停止现有 ${SERVICE_NAME}.service..."
         systemctl stop "$SERVICE_NAME" 2>/dev/null || true
         systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     fi
+}
+
+service_exists() {
+    [[ -f "$SERVICE_FILE" ]] && return 0
+    systemctl cat "$SERVICE_NAME" >/dev/null 2>&1
 }
 
 cleanup_bpf_pin() {
@@ -827,16 +840,62 @@ install_shortcut() {
     require_root
     require_linux
 
-    if [[ ! -x "$BIN_PATH" ]]; then
-        error "未找到 RFW 二进制: ${BIN_PATH}"
-        error "请先执行部署，或确认 RFW 已安装到 ${INSTALL_DIR}"
+    mkdir -p "$INSTALL_DIR"
+    if [[ -f "$0" ]]; then
+        local source_script=""
+        source_script=$(readlink -f "$0" 2>/dev/null || printf '%s\n' "$0")
+        local target_script=""
+        target_script=$(readlink -f "$MANAGER_PATH" 2>/dev/null || printf '%s\n' "$MANAGER_PATH")
+        if [[ "$source_script" != "$target_script" ]]; then
+            cp -f "$source_script" "$MANAGER_PATH"
+        fi
+    elif [[ ! -f "$MANAGER_PATH" ]]; then
+        error "未找到部署脚本实体文件，无法创建管理快捷命令"
+        error "请使用文件方式运行脚本，例如: sudo bash Incubal-Firewall.sh --install-shortcut"
         exit 1
     fi
+    chmod 0755 "$MANAGER_PATH"
 
     mkdir -p "$(dirname "$SHORTCUT_PATH")"
-    ln -sfn "$BIN_PATH" "$SHORTCUT_PATH"
-    chmod 0755 "$BIN_PATH"
-    log "快捷命令已安装: ${SHORTCUT_PATH} -> ${BIN_PATH}"
+    cat > "$SHORTCUT_PATH" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+MANAGER="${MANAGER_PATH}"
+RFW_BIN="${BIN_PATH}"
+
+if [[ "\${1:-}" == "raw" ]]; then
+    shift
+    if [[ ! -x "\$RFW_BIN" ]]; then
+        echo "RFW 二进制不存在或不可执行: \$RFW_BIN" >&2
+        exit 1
+    fi
+    exec "\$RFW_BIN" "\$@"
+fi
+
+case "\${1:-}" in
+    stats|run|help)
+        if [[ ! -x "\$RFW_BIN" ]]; then
+            echo "RFW 二进制不存在或不可执行: \$RFW_BIN" >&2
+            exit 1
+        fi
+        exec "\$RFW_BIN" "\$@"
+        ;;
+esac
+
+if [[ ! -f "\$MANAGER" ]]; then
+    echo "Incubal-Firewall 管理脚本不存在: \$MANAGER" >&2
+    exit 1
+fi
+exec bash "\$MANAGER" "\$@"
+EOF
+    chmod 0755 "$SHORTCUT_PATH"
+    if [[ -x "$BIN_PATH" ]]; then
+        chmod 0755 "$BIN_PATH"
+    else
+        warn "未找到 RFW 二进制: ${BIN_PATH}，快捷菜单仍可使用，部署完成后 raw/stats 命令才可用"
+    fi
+    log "快捷命令已安装: ${SHORTCUT_PATH} -> ${MANAGER_PATH}"
 }
 
 start_service() {
@@ -883,9 +942,9 @@ install_firewall() {
     echo ""
     echo -e "  查看状态: ${DIM}systemctl status ${SERVICE_NAME}${NC}"
     echo -e "  查看日志: ${DIM}journalctl -u ${SERVICE_NAME} -f${NC}"
-    echo -e "  快捷命令: ${DIM}sudo incudalrfw --help${NC}"
+    echo -e "  进入菜单: ${DIM}sudo incudalrfw${NC}"
     if [[ "$LOG_PORT_ACCESS" == "true" ]]; then
-        echo -e "  查看统计: ${DIM}sudo incudalrfw stats --blocked-only${NC}"
+        echo -e "  查看统计: ${DIM}sudo incudalrfw --blocked-stats${NC}"
     fi
     echo ""
 }
@@ -906,9 +965,13 @@ status_firewall() {
     if [[ -L "$SHORTCUT_PATH" || -x "$SHORTCUT_PATH" ]]; then
         local shortcut_target=""
         shortcut_target=$(readlink "$SHORTCUT_PATH" 2>/dev/null || true)
-        echo -e "  快捷命令  :  ${GREEN}${SHORTCUT_PATH}${NC}${shortcut_target:+ -> ${shortcut_target}}"
+        echo -e "  管理命令  :  ${GREEN}${SHORTCUT_PATH}${NC}${shortcut_target:+ -> ${shortcut_target}}"
     else
-        echo -e "  快捷命令  :  ${DIM}未安装，可执行 sudo bash Incubal-Firewall.sh --install-shortcut${NC}"
+        echo -e "  管理命令  :  ${DIM}未安装，可执行 sudo bash Incubal-Firewall.sh --install-shortcut${NC}"
+    fi
+
+    if [[ -f "$MANAGER_PATH" ]]; then
+        echo -e "  管理脚本  :  ${GREEN}${MANAGER_PATH}${NC}"
     fi
 
     if [[ -f "$SERVICE_FILE" ]]; then
@@ -920,7 +983,7 @@ status_firewall() {
         echo -e "  服务文件  :  ${DIM}未安装${NC}"
     fi
 
-    if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
+    if command -v systemctl >/dev/null 2>&1 && service_exists; then
         local active=""
         active=$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || true)
         local enabled=""
@@ -935,11 +998,6 @@ status_firewall() {
 
 require_rfw_binary() {
     require_linux
-
-    if [[ -x "$SHORTCUT_PATH" ]]; then
-        echo "$SHORTCUT_PATH"
-        return
-    fi
 
     if [[ -x "$BIN_PATH" ]]; then
         echo "$BIN_PATH"
@@ -1015,7 +1073,7 @@ service_control() {
     require_root
     ensure_systemctl
 
-    if ! systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
+    if ! service_exists; then
         warn "RFW 服务未安装"
         return 0
     fi
@@ -1033,7 +1091,7 @@ service_control() {
 show_recent_logs() {
     ensure_systemctl
 
-    if ! systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
+    if ! service_exists; then
         warn "RFW 服务未安装"
         return 0
     fi
@@ -1048,23 +1106,34 @@ show_recent_logs() {
 show_blocked_logs() {
     ensure_systemctl
 
-    if ! systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
+    local log_file=""
+    log_file=$(mktemp)
+    trap 'rm -f "$log_file"' RETURN
+
+    if ! service_exists; then
         warn "RFW 服务未安装"
-        warn "如果你是手动运行 /opt/incubal-firewall/rfw，阻断明细会输出在当前终端，而不是 journalctl"
-        return 0
+        warn "确认服务是否正在运行: systemctl status ${SERVICE_NAME} --no-pager"
+        warn "查看原始日志: journalctl -u ${SERVICE_NAME} -n 80 --no-pager"
+    else
+        journalctl -u "$SERVICE_NAME" -n 300 --no-pager > "$log_file" 2>/dev/null || true
     fi
 
     divider
     echo -e "  ${BOLD}最近阻断明细日志${NC}"
     divider
-    journalctl -u "$SERVICE_NAME" -n 300 --no-pager | grep --color=never -E "BLOCKED|被阻止|阻止|阻断" || true
+    if ! grep --color=never -E "BLOCKED|被阻止|阻止|阻断" "$log_file"; then
+        warn "最近 300 行 systemd 日志里没有匹配到阻断明细"
+        warn "确认服务是否正在运行: systemctl status ${SERVICE_NAME} --no-pager"
+        warn "查看原始日志: journalctl -u ${SERVICE_NAME} -n 80 --no-pager"
+        warn "如果你是手动运行 /opt/incubal-firewall/rfw，阻断明细会输出在当前终端，而不是 journalctl"
+    fi
     divider
 }
 
 watch_blocked_logs() {
     ensure_systemctl
 
-    if ! systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
+    if ! service_exists; then
         warn "RFW 服务未安装"
         warn "如果你是手动运行 /opt/incubal-firewall/rfw，阻断明细会输出在当前终端，而不是 journalctl"
         return 0
@@ -1094,6 +1163,9 @@ uninstall_firewall() {
     echo -e "    ${RED}•${NC} ${INSTALL_DIR}"
     echo -e "    ${RED}•${NC} ${SHORTCUT_PATH}"
     echo -e "    ${RED}•${NC} ${BPF_PIN_PATH}"
+    if [[ -f "$MANAGER_PATH" ]]; then
+        echo -e "    ${RED}•${NC} ${MANAGER_PATH}"
+    fi
     if [[ -f "$script_path" ]]; then
         echo -e "    ${RED}•${NC} ${script_path}"
     else
@@ -1120,6 +1192,7 @@ uninstall_firewall() {
     rm -f "$SERVICE_FILE" 2>/dev/null || true
     rm -f "$SHORTCUT_PATH" 2>/dev/null || true
     cleanup_bpf_pin
+    rm -f "$MANAGER_PATH" 2>/dev/null || true
     rm -rf "$INSTALL_DIR" 2>/dev/null || true
     systemctl daemon-reload 2>/dev/null || true
 
